@@ -334,6 +334,7 @@ internal class CodeGeneratorVisitor(val context: Context) : IrElementVisitorVoid
         module.acceptChildrenVoid(this)
         appendLlvmUsed(context.llvm.usedFunctions)
         appendStaticInitializers(context.llvm.staticInitializers)
+        appendEntryPointSelector(findMainEntryPoint(context))
     }
 
     //-------------------------------------------------------------------------//
@@ -2095,6 +2096,39 @@ internal class CodeGeneratorVisitor(val context: Context) : IrElementVisitorVoid
             LLVMSetSection(llvmUsedGlobal.llvmGlobal, "llvm.metadata");
         }
     }
+
+    //-------------------------------------------------------------------------//
+
+    fun entryPointSelector(entryPoint: LLVMValueRef, 
+        entryPointType: LLVMTypeRef, selectorName: String): LLVMValueRef {
+
+        assert(LLVMCountParams(entryPoint) == 1)
+
+        val selector = LLVMAddFunction(context.llvmModule, selectorName, entryPointType)!!
+        codegen.prologue(selector, voidType)
+
+        val param = LLVMGetParam(selector, 0)!!
+        codegen.callAtFunctionScope(entryPoint, listOf(param), Lifetime.IRRELEVANT)
+
+        codegen.ret(null)
+        codegen.epilogue()
+        return selector
+    }
+
+    //-------------------------------------------------------------------------//
+
+    fun appendEntryPointSelector(descriptor: FunctionDescriptor?) {
+        if (descriptor == null) return
+
+        val entryPoint = codegen.llvmFunction(descriptor)
+        val selectorName = "EntryPointSelector"
+        val entryPointType = getFunctionType(entryPoint)!!
+
+        val selector = entryPointSelector(entryPoint, entryPointType, selectorName)
+
+        LLVMSetLinkage(selector, LLVMLinkage.LLVMExternalLinkage)
+    }
+
 
     //-------------------------------------------------------------------------//
     // Create type { i32, void ()*, i8* }
